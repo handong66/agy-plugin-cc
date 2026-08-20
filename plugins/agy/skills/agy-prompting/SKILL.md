@@ -8,7 +8,7 @@ user-invocable: false
 
 Use this skill when `agy:agy-rescue` needs to ask agy for help.
 
-agy fronts many different models (Anthropic, OpenAI, Google, open-weight models, and free agy zen models), so write prompts that work without relying on model-specific quirks. Prompt like an operator, not a collaborator. Keep prompts compact and block-structured with XML tags. State the task, the output contract, the follow-through defaults, and the small set of extra constraints that matter.
+agy fronts several model families (Gemini 3.x, Claude Sonnet/Opus 4.6, GPT-OSS) and resolves its own default, so write prompts that work without relying on model-specific quirks. Prompt like an operator, not a collaborator. Keep prompts compact and block-structured with XML tags. State the task, the output contract, the follow-through defaults, and the small set of extra constraints that matter.
 
 Core rules:
 - **Never reference an absolute path outside the repository root in an agy prompt.** agy auto-rejects reads outside its working directory (it prints `! permission requested: external_directory (<path>); auto-rejecting` on stderr and still exits 0), while Claude Code stages large prompts and material under `/private/tmp/claude-<uid>/<project>/<session>/scratchpad` by default (the `501` in that path is the author's own macOS user id, not a constant). A prompt that points at such a path produces a run that reads nothing and answers with narration. Either inline the material in the prompt, or copy the file into the repository (or worktree) first and reference it by repository-relative path.

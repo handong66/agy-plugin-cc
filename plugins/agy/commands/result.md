@@ -12,7 +12,7 @@ Present the full command output to the user. Do not summarize or condense it. Pr
 - The complete result payload, including verdict, summary, findings, details, and next steps
 - File paths and line numbers exactly as reported
 - Any error messages or parse errors
-- The agy session ID and the `agy -s <session-id>` command when present
+- The agy conversation ID and the `agy --conversation <conversation-id>` command when present
 - Follow-up commands such as `/agy:status <id>` and `/agy:review`
 
 Notes:

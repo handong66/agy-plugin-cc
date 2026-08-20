@@ -71,5 +71,6 @@ agy 1.1.15 before it was written, and the captures are in
 - **Sessions are conversations.** Resume is `--conversation <id>`;
   `agy --continue` continues the most recent one. Job records and `--json`
   documents carry `agyConversationId`.
+- **Flag validation is inherited and kept.** `--threat-model` is refused by plain `review` rather than accepted and dropped — only the adversarial prompt has a slot for it — an unknown flag before the free text fails the command instead of landing in the prompt, and `--scope` is validated against `auto|working-tree|branch`.
 - **`--variant` is `--effort`** (`low` | `medium` | `high`), agy's own name for
   the dial, and `--variant` is kept as an alias.

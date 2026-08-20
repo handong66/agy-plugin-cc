@@ -117,6 +117,12 @@ Concretely:
 
 Write-capable runs (`/agy:rescue`) get your real repository and `--mode accept-edits`. That is the point of them; none of the above applies.
 
+### How long a run takes, and how to wait for one
+
+`/agy:status <id> --wait --timeout-ms <ms>` blocks until a job reaches a terminal state and returns the moment it does, so a generous deadline costs nothing when the run is quick; `/agy:status --all --json` reports every job's `elapsedMs` and `resultComplete` in one call.
+
+**This runtime has no measured latency corpus yet, and no median or p90 is published here rather than one being invented.** The only numbers taken so far are floors from toy repositories — a working-tree review on `gemini-3.7-flash-low` finished in ~12s, a write-capable fix in ~14s — and a floor from a toy repository is not a budget for a review of real work. Budget generously, measure your own repositories, and treat a short deadline as the thing most likely to truncate a run that was going fine. The same statement is in `status --help`.
+
 ### Stop-time review gate
 
 `/agy:setup --enable-review-gate` makes agy review every Claude turn that edited code before Claude is allowed to stop, blocking with concrete findings when something still needs fixing. It runs a full agy turn on every stop — enable it only while actively monitoring a session, and disable it with `/agy:setup --disable-review-gate`.

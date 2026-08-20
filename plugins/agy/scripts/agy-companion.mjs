@@ -63,11 +63,14 @@ const REVIEW_SCHEMA_PATH = path.join(ROOT_DIR, "schemas", "review-output.schema.
 const REVIEW_RULES =
   "You are running a non-interactive code review job. Never modify files and never run commands with side effects.";
 const SETUP_GUIDANCE =
-  "Install the agy CLI so the `agy` binary is on PATH (e.g. `npm i -g antigravity-cli` or `curl -fsSL https://antigravity.google/install | bash`), then sign in with `agy auth login`. Run /agy:setup to re-check.";
+  "Install the Antigravity CLI so the `agy` binary is on PATH (`brew install --cask antigravity-cli`, or `curl -fsSL https://antigravity.google/cli/install.sh | bash`), then run `agy` once and complete the Google sign-in. Run /agy:setup to re-check.";
 const STATUS_WAIT_POLL_MS = 2000;
 const STATUS_WAIT_DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
-// A backstop, not a budget: agy runs have a measured p90 of ~5.5 minutes,
-// so this only catches runs that are never coming back.
+// A backstop, not a budget. This runtime has no measured latency corpus yet —
+// the only numbers taken so far are floors from toy repositories (~12s for a
+// working-tree review on a flash-tier model) and inventing a p90 from them
+// would be worse than admitting there is none. Set generously; `--wait` returns
+// the moment a job is terminal, so a long deadline costs nothing.
 const RUN_TIMEOUT_DEFAULT_MS = 15 * 60 * 1000;
 const BACKGROUND_FLAG_MESSAGE =
   "--background is a Claude Code execution flag, not a companion flag; the companion always runs in the foreground. Detach with Bash(run_in_background: true), or use /agy:rescue --background.";
@@ -1667,13 +1670,13 @@ const SUBCOMMAND_HELP = {
     "  --timeout-ms <ms>       bound for --wait (default 900000)",
     "  --json                  machine-readable result on stdout",
     "",
-    "How long to wait: measured on the recorded corpus, an agy run finishes",
-    "in a median of ~3 minutes, with a p90 near 5.5 minutes for read-only reviews",
-    "on the plan agent — roughly 4x the sibling Grok runtime. A 2-minute deadline",
-    "is below this runtime's median, so budget above it: 16 of 19 recorded",
-    "three-way aggregations recorded an empty agy slot whose answer arrived",
-    "shortly after the decision had been made. `--wait` returns as soon as the job",
-    "is terminal, so a generous --timeout-ms costs nothing when the run is quick.",
+    "How long to wait: this runtime has no measured latency corpus yet. The only",
+    "numbers taken so far are floors from toy repositories — a working-tree review",
+    "on a flash-tier model finished in ~12s — and a floor from a toy repository is",
+    "not a budget for a real review, so no median or p90 is published here rather",
+    "than one being invented. Budget generously and measure your own repositories:",
+    "`--wait` returns as soon as the job is terminal, so a long --timeout-ms costs",
+    "nothing when the run is quick, while a short one truncates work that was fine.",
     "`--all --json` gives every job's elapsedMs and resultComplete in one call."
   ],
   result: [

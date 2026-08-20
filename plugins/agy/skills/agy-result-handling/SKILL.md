@@ -14,7 +14,7 @@ When the helper returns agy output:
 - Preserve output sections when the prompt asked for them, such as observed facts, inferences, open questions, touched files, or next steps.
 - If there are no findings, say that explicitly and keep the residual-risk note brief.
 - If agy made edits, say so explicitly and list the touched files when the helper provides them.
-- Preserve the agy session ID and the `agy -s <session-id>` command so the user can continue the session inside agy.
+- Preserve the agy conversation ID and the `agy --conversation <conversation-id>` command so the user can continue the session inside agy.
 - For `agy:agy-rescue`, do not turn a failed or incomplete agy run into a Claude-side implementation attempt. Report the failure and stop.
 - For `agy:agy-rescue`, if agy was never successfully invoked, do not generate a substitute answer at all.
 - A single line of the form `AGY_RESCUE_FAILED: <reason> | job=<id> | log=<path>` means the rescue subagent got no agy answer. Report the reason and the job id to the user as-is; do not answer in agy's place. If the id is real, `/agy:status <id>` and `/agy:result <id>` may still hold the run's output.
@@ -25,7 +25,7 @@ Failure classes (`failureClass` on the job record and in `--json`; also rendered
 - `model_unauthorized` — the account may not use that model. Not retryable as-is: pick a granted model or drop `--model`.
 - `model_not_found` — unknown model id, usually provider-prefix casing. agy's own `Did you mean:` hint is in the stderr tail.
 - `quota_exhausted` — provider balance or quota is gone. **Not** a plugin or prompt problem and **not** retryable; say so and let the user re-route to another provider rather than re-running.
-- `auth_required` — no usable credentials. Send the user to `/agy:setup` and `!agy auth login`; never improvise an alternate auth flow.
+- `auth_required` — agy is not signed in. Send the user to `/agy:setup` and tell them to run `agy` once in a terminal to complete the Google sign-in; never improvise an alternate auth flow.
 - `rate_limited` — 429 / rate limit / provider overloaded. Transient, and the class most worth retrying: wait and re-run the same request unchanged rather than rewording it or switching model.
 - `provider_error` — server-side error. Worth one retry; if it repeats, switch provider.
 - `agy_failed` — nothing recognisable. Report the stderr tail as-is.

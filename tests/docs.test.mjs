@@ -29,9 +29,14 @@ test("rescue invocation templates carry an explicit Bash timeout", () => {
     );
     assert.match(
       text,
-      /agy runs (?:regularly|routinely|often) (?:take|run) longer than (?:two minutes|2 minutes)/i,
-      `${name} must state that agy runs regularly exceed the 2-minute default`
+      /(?:two minutes|2 minutes|120000)/i,
+      `${name} must name the 2-minute Bash default as the hazard the timeout exists for`
     );
+    // Deliberately NOT asserted: how often agy runs exceed two minutes. The
+    // figure this file inherited ("regularly") was measured on the opencode
+    // corpus, and no equivalent corpus exists for agy yet — the only numbers
+    // taken are floors from toy repositories. Requiring the docs to state a
+    // frequency would require inventing one.
   }
 });
 
@@ -127,10 +132,24 @@ test("wall-time budgeting lives in --help and the README, not the bundled skill"
   const runtime = readDoc("scripts", "agy-companion.mjs");
   const readme = fs.readFileSync(path.join(REPO_ROOT, "README.md"), "utf8");
 
+  // The layering rule survives the port: scheduling guidance belongs to
+  // `status --help` and the README, never to the bundled skill.
   for (const measurement of [/p90/i, /median/i, /16 of 19/]) {
     assert.doesNotMatch(skill, measurement, "the skill must not carry scheduling statistics");
-    assert.match(runtime, measurement, "status --help must carry them instead");
-    assert.match(readme, measurement, "and so must the README");
+  }
+  // What changed is the content. The median / p90 / "16 of 19" figures this file
+  // used to require were measured on the opencode runtime; agy has no such
+  // corpus, so demanding them here would force the README and --help to publish
+  // fabricated latency for a runtime nobody has measured. What IS required is
+  // that both layers say so, and say what little was actually measured.
+  for (const [name, text] of [["status --help", runtime], ["the README", readme]]) {
+    assert.match(
+      text,
+      /no measured latency corpus|floors? from toy repositor/i,
+      `${name} must say that this runtime's wall time is not yet measured`
+    );
+    assert.match(text, /--wait` returns|returns as soon as the job|returns the moment/i,
+      `${name} must say a generous deadline is free because --wait returns on terminal`);
   }
   // What the skill keeps: the primitive and the field semantics.
   assert.match(skill, /status <id> --wait --timeout-ms <ms>/);
@@ -145,7 +164,13 @@ test("wall-time budgeting lives in --help and the README, not the bundled skill"
 test("the changelog's review claims match the runtime that shipped", () => {
   const sections = readDoc("CHANGELOG.md").split(/^## /m);
   const latest = sections[1];
-  assert.match(latest, /^0\.2\.0\b/, "the first section must be the release being described");
+  // Checked against package.json rather than a literal, so the assertion cannot
+  // go stale the way the hardcoded 0.2.0 it replaced did.
+  const version = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "package.json"), "utf8")).version;
+  assert.ok(
+    latest.startsWith(version),
+    `the first changelog section must describe the released version (${version}), not "${latest.slice(0, 12)}"`
+  );
   assert.doesNotMatch(
     latest,
     /stderr warning naming the dropped text/,

@@ -43,7 +43,7 @@ Entry point rules:
 - `/agy:setup --json` reports `pluginVersion` and `companionPath` if you need to confirm which copy answered.
 
 Timeout rules:
-- agy runs regularly take longer than two minutes (typical 2-6 minutes for read-only reviews on the plan agent), so the Claude Code default of 120000 ms cuts a large share of them off mid-run with `Exit code 143`.
+- agy runs can take longer than two minutes, so the Claude Code default of 120000 ms cuts them off mid-run with `Exit code 143`. Measured floor numbers on this runtime are small (a working-tree review on a flash-tier model finished in ~12s), but they came from toy repositories and are not a budget for real work — leave a generous deadline, which costs nothing when the run is quick.
 - Always pass `timeout: 600000` on a foreground `task` call. Never rely on the default.
 - `timeout` and `run_in_background` are Claude Code `Bash` parameters. They are never companion flags and must not appear in the companion command line.
 
@@ -62,7 +62,7 @@ Command selection:
 - Use exactly one `task` invocation per rescue handoff.
 - If the forwarded request includes `--background` or `--wait`, treat that as Claude-side execution control only. Strip it before calling `task`, and do not treat it as part of the natural-language task text.
 - If the forwarded request includes `--model`, pass the `provider/model` value through to `task`.
-- If the forwarded request includes `--variant` (or the legacy `--effort`), pass it through to `task` (it maps to `agy run --variant`).
+- If the forwarded request includes `--effort` (or the legacy `--variant`), pass it through to `task` (it maps to agy's `--effort low|medium|high`).
 - If the forwarded request includes `--resume-session <ses_id>`, strip both tokens from the task text and pass `--resume-session <ses_id>` to `task` unchanged. This continues exactly that session; use it in preference to `--resume-last` whenever an id is given.
 - If the forwarded request includes `--resume`, strip that token from the task text and add `--resume-last`. `--resume-last` continues the newest resumable *task* session in this repository — completed, incomplete or failed, never a cancelled or orphaned one — and the companion prints which one it picked.
 - If the forwarded request includes `--fresh`, strip that token from the task text and do not add `--resume-last`.
@@ -72,7 +72,8 @@ Command selection:
 
 Safety rules:
 - Default to write-capable agy work in `agy:agy-rescue` unless the user explicitly asks for read-only behavior.
-- Write-capable runs pass `--auto` to agy (auto-approve permissions); the user opted into delegation by invoking rescue.
+- Write-capable runs are given the real repository with `--mode accept-edits --dangerously-skip-permissions`; the user opted into delegation by invoking rescue.
+- Read-only runs are NOT given the repository at all. They get a disposable copy of the working tree, because agy has no read-only permission mode — a run that can read the code can also write it, so isolation is done by choosing which directory agy is handed. Any edit such a run makes is discarded with the copy and reported as a `readonly_run_wrote_files` warning: never relay such a run's "I fixed it" as though a file changed.
 - Read-only runs use agy's built-in `plan` agent, which cannot edit files.
 - Preserve the user's task text as-is apart from stripping routing flags.
 - Do not inspect the repository, read files, grep, cancel jobs, summarize output, or do any follow-up work of your own.

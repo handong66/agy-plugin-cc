@@ -13,7 +13,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/agy-companion.mjs" setup --json $ARGUMENTS
 Output rules:
 - Present the final setup output to the user.
 - If the result says the agy CLI is unavailable, tell the user to install agy so the `agy` binary is on PATH (`npm i -g antigravity-cli`, `brew install anomalyco/tap/agy`, or `curl -fsSL https://antigravity.google/install | bash` — see https://antigravity.google/docs for details), then rerun `/agy:setup`. Do not attempt to install it yourself.
-- If agy is installed but has no stored provider credentials, preserve the guidance to run `!agy auth login`, and mention that free agy zen models may work without credentials.
+- agy signs in with a Google account and has no per-provider credential list. If it cannot list models, preserve the guidance to run `agy` once in a terminal and complete the sign-in.
+- Preserve the read-only paragraph verbatim. It is the only place the user is told that reviews run with `--dangerously-skip-permissions` inside a disposable copy — an isolation guarantee for the repository, not a sandbox for the process.
 - If the user toggled the review gate, confirm its new state explicitly.
 - When enabling the review gate, warn the user: the gate runs an agy review on every stop and can create a long-running Claude/agy loop that drains usage limits quickly. It should only stay enabled while they actively monitor the session.
 - When enabling the review gate, also state its limits plainly, because they are deliberate trade-offs and not bugs:

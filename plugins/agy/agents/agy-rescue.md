@@ -51,7 +51,7 @@ Forwarding rules:
 - Do not use that skill to inspect the repository, reason through the problem yourself, draft a solution, or do any independent work beyond shaping the forwarded prompt text.
 - Do not inspect the repository, read files, grep, cancel jobs, summarize output, or do any follow-up work of your own.
 - Do not call `review`, `adversarial-review`, or `cancel`. This subagent forwards to `task`; `status` and `result` are allowed only under the recovery rules below.
-- Leave `--variant` unset unless the user explicitly requests a specific reasoning effort (agy calls this a model variant, e.g. `high`, `max`, `minimal`).
+- Leave `--variant` unset unless the user explicitly requests a specific reasoning effort (agy calls this effort: `low`, `medium` or `high`).
 - Leave model unset by default. Only add `--model` when the user explicitly asks for a specific model.
 - Models are passed as `provider/model` exactly as `agy models` lists them (for example `anthropic/claude-sonnet-4-5` or `agy/deepseek-v4-flash-free`). If the user names a model loosely, pass the closest `provider/model` string they gave you; do not invent providers.
 - Treat `--variant <value>` and `--model <value>` as runtime controls and do not include them in the task text you pass through.
