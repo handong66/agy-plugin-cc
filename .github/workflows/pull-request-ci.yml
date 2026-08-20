@@ -1,0 +1,46 @@
+name: Pull Request CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI (${{ matrix.os }})
+    # Development happens on macOS and the plugin is installed on both, while
+    # the runtime touches process groups, signals and atomic renames — the
+    # places where the two platforms differ. Testing one of them is testing half.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run test suite
+        run: npm test
+
+      - name: Syntax-check every runtime file
+        run: |
+          for file in plugins/agy/scripts/*.mjs plugins/agy/scripts/lib/*.mjs; do
+            node --check "$file"
+          done
+
+      - name: Smoke-test the companion entry point
+        # No agy CLI here, so this asserts the readiness report is
+        # well-formed JSON — not that agy is installed.
+        run: node plugins/agy/scripts/agy-companion.mjs setup --json | node -e 'process.stdin.setEncoding("utf8"); let raw = ""; process.stdin.on("data", (chunk) => { raw += chunk; }); process.stdin.on("end", () => { JSON.parse(raw); });'

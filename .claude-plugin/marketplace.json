@@ -1,0 +1,21 @@
+{
+  "name": "agy-plugin-cc",
+  "owner": {
+    "name": "domo"
+  },
+  "metadata": {
+    "description": "Antigravity CLI (agy) plugin for Claude Code — delegation and code review.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "agy",
+      "description": "Use the Antigravity CLI (agy) from Claude Code to review code or delegate tasks.",
+      "version": "0.1.0",
+      "author": {
+        "name": "domo"
+      },
+      "source": "./plugins/agy"
+    }
+  ]
+}

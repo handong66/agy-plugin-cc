@@ -1,0 +1,16 @@
+agy plugin for Claude Code
+Copyright 2026 the agy-plugin-cc authors
+
+This product includes software derived from the Codex plugin for Claude Code
+(https://github.com/openai/codex-plugin-cc), Copyright OpenAI, licensed under the
+Apache License, Version 2.0.
+
+It is a direct port of the opencode plugin for Claude Code
+(https://github.com/handong66/opencode-plugin-cc), which is itself derived from
+that Codex plugin. The command surface, the three-outcome run classification,
+the job-store design and the per-workspace state layout come from that lineage.
+
+The runtime implementation targets the Antigravity CLI's headless print mode
+(https://antigravity.google) and was written for this project. Antigravity and
+the `agy` CLI are products of Google; this project is not affiliated with,
+endorsed by, or supported by Google, OpenAI, or Anomaly Innovations.
