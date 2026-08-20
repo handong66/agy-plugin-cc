@@ -7,6 +7,14 @@ import { test } from "node:test";
 import { COMPANION, makeFakeEnv, makeTempDir, makeTempGitRepo, readRunArgs, runCompanion } from "./helpers.mjs";
 import { splitAtSentinel } from "../plugins/agy/scripts/lib/args.mjs";
 
+// The prompt rides in the `-p` value of the agy flag vector; the last
+// positional argument is no longer the prompt the way it was for the opencode
+// runtime this was ported from.
+function promptOf(fake) {
+  const args = readRunArgs(fake);
+  return args[args.indexOf("-p") + 1];
+}
+
 // The exact Phase 1 corpus case: the documented single-argument form ran the
 // prompt through `tokenize`, which drops quote characters, swallows everything
 // after an apostrophe, and folds newlines into spaces. 8 of 39 recorded task
@@ -23,8 +31,8 @@ test("everything after -- survives the single-argument form byte for byte", () =
   assert.equal(result.status, 0, result.stderr);
 
   const runArgs = readRunArgs(fake);
-  assert.equal(runArgs.at(-1), HOSTILE_PROMPT);
-  assert.equal(runArgs[runArgs.indexOf("--agent") + 1], "plan", "flags before -- are still parsed");
+  assert.equal(promptOf(fake), HOSTILE_PROMPT);
+  assert.equal(runArgs.includes("--mode"), false, "flags before -- are still parsed: read-only runs get no mode flag");
 });
 
 test("--prompt-file passes the file through untouched", () => {
@@ -38,7 +46,7 @@ test("--prompt-file passes the file through untouched", () => {
     cwd: makeTempGitRepo()
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(readRunArgs(fake).at(-1), HOSTILE_PROMPT);
+  assert.equal(promptOf(fake), HOSTILE_PROMPT);
 });
 
 test("--prompt-stdin reads the prompt from stdin", () => {
@@ -51,7 +59,7 @@ test("--prompt-stdin reads the prompt from stdin", () => {
     timeout: 30_000
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(readRunArgs(fake).at(-1), HOSTILE_PROMPT);
+  assert.equal(promptOf(fake), HOSTILE_PROMPT);
 });
 
 test("a missing --prompt-file fails loudly instead of running an empty prompt", () => {
@@ -111,5 +119,5 @@ test("a standalone -- inside task text stays task text", () => {
     cwd: makeTempGitRepo()
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(readRunArgs(fake).at(-1), "run the suite -- then report");
+  assert.equal(promptOf(fake), "run the suite -- then report");
 });

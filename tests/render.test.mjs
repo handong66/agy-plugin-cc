@@ -35,7 +35,7 @@ test("renderReviewOutput orders findings by severity and keeps the session hint"
   assert.match(rendered, /Verdict: NEEDS ATTENTION/);
   assert.ok(rendered.indexOf("Boom") < rendered.indexOf("Nit"), "critical must render before low");
   assert.match(rendered, /b\.js:2-3/);
-  assert.match(rendered, /agy -s ses_render/);
+  assert.match(rendered, /Continue in agy with: agy --conversation ses_render/);
 });
 
 test("renderReviewOutput falls back to raw output when schema parsing failed", () => {

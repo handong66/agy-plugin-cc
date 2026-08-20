@@ -49,27 +49,18 @@ function warningBlock(warnings) {
   return ["", "Warnings:", ...entries.map((warning) => `- ${warning.message}`)];
 }
 
-// Which model produced this. Every recorded job stored `model: null` and no
-// renderer showed the agent, so read-only runs silently landing on the plan
-// agent's model — a different, cheaper model than the configured default —
-// could not be seen by anyone relying on those reviews.
+// Which model produced this. agy has no user-facing model configuration, so
+// there are exactly two answers and no prediction: the id the run's own init
+// event reported (or a --model this plugin put on the command line), or none.
+// The opencode runtime's "expected" label is gone along with the config
+// scraping it described — certainty "unknown" means no line is printed, not
+// that a guess is labelled as one.
 export function describeRunSelection(job) {
-  if (!job?.model && !job?.agent) {
+  if (!job?.model) {
     return null;
   }
-  const qualifiers = [job.agent ? `agent ${job.agent}` : null, job.variant ? `variant ${job.variant}` : null]
-    .filter(Boolean)
-    .join(", ");
-  // Only two sources are observations: a `--model` this plugin put on the
-  // command line, and a model id the run's own event stream reported. Anything
-  // read out of a config file is a prediction — agy resolves its model
-  // from a project-level config and its environment too, so stating an inferred
-  // id as fact would report a model that never ran.
-  const observed = job.modelCertainty
-    ? job.modelCertainty === "actual"
-    : job.modelSource === "flag" || job.modelSource === "event-stream";
-  const label = observed ? "Model" : "Model (expected)";
-  return `${label}: ${job.model ?? "agy default"}${qualifiers ? ` (${qualifiers})` : ""}`;
+  const qualifiers = job.effort ? `effort ${job.effort}` : null;
+  return `Model: ${job.model}${qualifiers ? ` (${qualifiers})` : ""}`;
 }
 
 function footer(job) {

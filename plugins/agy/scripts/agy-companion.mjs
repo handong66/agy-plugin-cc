@@ -818,8 +818,7 @@ async function commandTask(tokens) {
       model: payload.model,
       modelSource: payload.modelSource,
       modelCertainty: payload.modelCertainty,
-      agent: payload.agent,
-      variant: payload.variant,
+      effort: payload.effort,
       rawOutput: payload.rawOutput,
       agyConversationId: payload.agyConversationId,
       resumedFrom,
@@ -858,6 +857,12 @@ const REVIEW_VALUE_FLAGS = [
   "--files",
   "--rubric-file",
   "--model",
+  // agy's own name for the dial is --effort; --variant is the opencode-era
+  // spelling kept as an alias. Both are listed because both are accepted, and
+  // `task` has always taken both — `review` taking only one meant a user
+  // following --help got "Unknown flag: --effort" from the command whose help
+  // had just named it.
+  "--effort",
   "--variant",
   "--timeout-ms"
 ];
@@ -981,8 +986,7 @@ async function commandReview(tokens, { adversarial }) {
         model: null,
         modelSource: null,
         modelCertainty: null,
-        agent: null,
-        variant: null,
+        effort: null,
         warnings: [],
         review: null,
         rawOutput: ""
@@ -1021,7 +1025,7 @@ async function commandReview(tokens, { adversarial }) {
 
   const kind = adversarial ? "adversarial-review" : "review";
   const model = flags.get("--model") ?? null;
-  const variant = flags.get("--variant") ?? null;
+  const variant = flags.get("--effort") ?? flags.get("--variant") ?? null;
   // Truncation existed only as a sentence buried in the prompt, where the
   // caller could not see it and the reviewer decided whether to mention it.
   const extraWarnings = reviewInput.truncated
@@ -1068,12 +1072,12 @@ async function commandReview(tokens, { adversarial }) {
       toolEventCount: payload.toolEventCount,
       evidenceLevel: payload.evidenceLevel,
       // Which model reviewed the work is the first thing a caller weighing a
-      // verdict needs, and read-only reviews run on the `plan` agent's model.
+      // verdict needs, and the answer is what the run observed — agy has no
+      // config to predict from.
       model: payload.model,
       modelSource: payload.modelSource,
       modelCertainty: payload.modelCertainty,
-      agent: payload.agent,
-      variant: payload.variant,
+      effort: payload.effort,
       warnings: payload.warnings,
       // Only a finished run has a verdict. A blacklisted `stopReason` makes a
       // run `incomplete` even when the JSON it had already emitted validates,

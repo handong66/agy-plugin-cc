@@ -5,6 +5,13 @@ import { test } from "node:test";
 import { makeFakeEnv, makeTempGitRepo, readRunArgs, runCompanion } from "./helpers.mjs";
 import { parseFlags } from "../plugins/agy/scripts/lib/args.mjs";
 
+// The prompt rides in the `-p` value of the agy flag vector, not in the last
+// positional argument.
+function promptOf(fake) {
+  const args = readRunArgs(fake);
+  return args[args.indexOf("-p") + 1];
+}
+
 // P-HELP: `task --help` used to reach agy as the prompt text and come back
 // as a *model-generated* help page for the agy CLI — three recorded
 // sessions, one of them stored as `completed` with a 14s duration.
@@ -102,7 +109,7 @@ test("dashes inside task text stay task text", () => {
     cwd: makeTempGitRepo()
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(readRunArgs(fake).at(-1), "fix the --dry-run path");
+  assert.equal(promptOf(fake), "fix the --dry-run path");
 });
 
 test("-- makes everything after it task text, including --help", () => {
@@ -112,7 +119,7 @@ test("-- makes everything after it task text, including --help", () => {
     cwd: makeTempGitRepo()
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(readRunArgs(fake).at(-1), "--help the --background flag");
+  assert.equal(promptOf(fake), "--help the --background flag");
 });
 
 test("parseFlags reports leading unknown flags and stops at the sentinel", () => {

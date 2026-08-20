@@ -7,6 +7,26 @@ import { test } from "node:test";
 import { REPO_ROOT, makeFakeEnv, makeTempDir, makeTempGitRepo, readRunArgs, runCompanion } from "./helpers.mjs";
 
 const STATE_MODULE = path.join(REPO_ROOT, "plugins", "agy", "scripts", "lib", "state.mjs");
+const CONVERSATION_ID = "11111111-2222-3333-4444-555555555555";
+
+// A review that validates against plugins/agy/schemas/review-output.schema.json.
+const VALID_REVIEW = {
+  verdict: "needs-attention",
+  summary: "One blocking issue in the retry path.",
+  findings: [
+    {
+      severity: "high",
+      title: "Retry loop never backs off",
+      body: "The delay is recomputed but never awaited, so all retries fire immediately.",
+      file: "src/retry.mjs",
+      line_start: 42,
+      line_end: 42,
+      confidence: 0.9,
+      recommendation: "Await the delay before the next retry."
+    }
+  ],
+  next_steps: ["Await the delay before the next retry"]
+};
 
 test("setup --json reports a ready fake agy", () => {
   const fake = makeFakeEnv();
@@ -19,7 +39,7 @@ test("setup --json reports a ready fake agy", () => {
   assert.equal(report.version, "9.9.9-fake");
 });
 
-test("task --write runs agy with --auto and stores a resumable job", () => {
+test("task --write runs agy with --mode accept-edits and stores a resumable job", () => {
   const fake = makeFakeEnv({ extra: { AGY_FAKE_TEXT: "answer from fake" } });
   const cwd = makeTempGitRepo();
 
@@ -28,12 +48,16 @@ test("task --write runs agy with --auto and stores a resumable job", () => {
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, true);
   assert.equal(payload.rawOutput, "answer from fake");
-  assert.equal(payload.agyConversationId, "ses_fake0123456789");
+  assert.equal(payload.agyConversationId, CONVERSATION_ID);
 
   const runArgs = readRunArgs(fake);
-  assert.ok(runArgs.includes("--auto"), `expected --auto in ${runArgs}`);
+  // The write dial is agy's own: --mode accept-edits pointed at the repository.
+  assert.ok(runArgs.includes("--mode"), `expected --mode in ${runArgs}`);
+  assert.equal(runArgs[runArgs.indexOf("--mode") + 1], "accept-edits");
+  assert.ok(!runArgs.includes("--auto"), "agy has no --auto; edits come from --mode accept-edits");
   assert.ok(!runArgs.includes("--agent"));
-  assert.equal(runArgs[runArgs.indexOf("--") + 1], "do the thing");
+  assert.equal(runArgs[runArgs.indexOf("--add-dir") + 1], fs.realpathSync(cwd), "a write run is pointed at the repo");
+  assert.equal(runArgs[runArgs.indexOf("-p") + 1], "do the thing");
 
   // status/result read the stored job back
   const status = runCompanion(["status", "--json", "--all"], { env: fake.env, cwd });
@@ -49,25 +73,34 @@ test("task --write runs agy with --auto and stores a resumable job", () => {
   assert.ok(fs.readdirSync(fake.stateDir).length > 0, "namespaced data dir must hold state");
   assert.equal(fs.readdirSync(fake.decoyDir).length, 0, "clobbered CLAUDE_PLUGIN_DATA must stay untouched");
 
-  // resume-last reuses the recorded session id
+  // resume-last reuses the recorded conversation id
   const resumed = runCompanion(["task", "--json", "--write", "--resume-last", "continue"], { env: fake.env, cwd });
   assert.equal(JSON.parse(resumed.stdout).ok, true);
   const resumedArgs = readRunArgs(fake);
-  assert.equal(resumedArgs[resumedArgs.indexOf("--session") + 1], "ses_fake0123456789");
+  assert.equal(resumedArgs[resumedArgs.indexOf("--conversation") + 1], CONVERSATION_ID);
 });
 
-test("task defaults to read-only via the plan agent", () => {
+test("task defaults to read-only via a disposable workspace copy", () => {
   const fake = makeFakeEnv();
-  const result = runCompanion(["task", "--json", "diagnose", "only"], { env: fake.env, cwd: makeTempGitRepo() });
+  const cwd = makeTempGitRepo();
+  const result = runCompanion(["task", "--json", "diagnose", "only"], { env: fake.env, cwd });
   assert.equal(result.status, 0, result.stderr);
   const runArgs = readRunArgs(fake);
-  assert.equal(runArgs[runArgs.indexOf("--agent") + 1], "plan");
+  // Read-only is workspace isolation, not a flag: agy has no read-only mode,
+  // --mode plan refuses reads, and named agents do not exist.
+  assert.ok(!runArgs.includes("--agent"), "agy agents returns empty; there is no plan agent");
   assert.ok(!runArgs.includes("--auto"));
+  assert.ok(!runArgs.includes("--mode"), "read-only runs never carry a mode flag");
+  const workspace = runArgs[runArgs.indexOf("--add-dir") + 1];
+  assert.match(workspace, /agy-review/, "the run is pointed at a disposable mirror");
+  assert.notEqual(workspace, fs.realpathSync(cwd), "the repository path itself is never handed over");
+  assert.equal(runArgs[runArgs.indexOf("-p") + 1], "diagnose only");
 });
 
 test("review parses structured findings and stays read-only", () => {
-  const fake = makeFakeEnv({ mode: "review-json" });
-  const result = runCompanion(["review", "--json"], { env: fake.env, cwd: makeTempGitRepo() });
+  const fake = makeFakeEnv({ mode: "review-json", extra: { AGY_FAKE_STRUCTURED: JSON.stringify(VALID_REVIEW) } });
+  const cwd = makeTempGitRepo();
+  const result = runCompanion(["review", "--json"], { env: fake.env, cwd });
   assert.equal(result.status, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, true);
@@ -75,21 +108,38 @@ test("review parses structured findings and stays read-only", () => {
   assert.equal(payload.review.findings.length, 1);
 
   const runArgs = readRunArgs(fake);
-  assert.equal(runArgs[runArgs.indexOf("--agent") + 1], "plan");
-  const prompt = runArgs.at(-1);
+  const workspace = runArgs[runArgs.indexOf("--add-dir") + 1];
+  assert.match(workspace, /agy-review/, "a review runs inside a disposable copy");
+  assert.notEqual(workspace, fs.realpathSync(cwd), "never the repository");
+  assert.ok(!runArgs.includes("--mode"), "reviews are never given a write mode");
+  const prompt = runArgs[runArgs.indexOf("-p") + 1];
   assert.match(prompt, /<output_schema>/);
   assert.match(prompt, /<system_rules>/);
   assert.match(prompt, /<headless_delegation>/, "the composed prompt must carry the headless preamble");
   assert.match(prompt, /app\.mjs/, "review prompt should inline the untracked file");
 });
 
-test("failed runs surface stderr and a non-zero exit", () => {
+// agy states *why* a run failed in the run document's `error` field on stdout,
+// and leaves stderr empty while doing it (measured: an unrecognised --model
+// exits 1 with an empty stderr). The classifier reads the document.
+test("a failed run is classified from the run document, not from stderr", () => {
   const fake = makeFakeEnv({ mode: "fail" });
   const result = runCompanion(["task", "--json", "--write", "explode"], { env: fake.env, cwd: makeTempGitRepo() });
   assert.equal(result.status, 1);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, false);
-  assert.match(payload.stderrTail, /fake provider exploded/);
+  assert.equal(payload.outputState, "failed");
+  assert.equal(payload.outputStateReason, "run-error");
+  assert.equal(payload.stderrTail, "", "the whole explanation lives in the document's error field");
+  assert.equal(payload.failureClass, "model_not_found");
+
+  const human = runCompanion(["task", "--write", "explode"], {
+    env: makeFakeEnv({ mode: "fail" }).env,
+    cwd: makeTempGitRepo()
+  });
+  assert.equal(human.status, 1);
+  assert.match(human.stdout, /Next step \(model_not_found\)/);
+  assert.match(human.stdout, /agy does not recognise that model id/);
 });
 
 // P-COMPLETE: exit code 0 is not a verdict. Two recorded failure shapes —
@@ -118,7 +168,7 @@ test("empty answers are reported as incomplete, not completed", () => {
   assert.match(stored.stdout, /Recover with: \/agy:rescue --resume/);
 });
 
-test("narration after tool calls is incomplete and keeps the partial output plus stderr", () => {
+test("narration after tool calls is incomplete and keeps the partial output", () => {
   const fake = makeFakeEnv({ mode: "narration" });
   const cwd = makeTempGitRepo();
   const prompt = `<task>\n${"Review the parent contracts in detail. ".repeat(60)}\n</task>`;
@@ -127,16 +177,19 @@ test("narration after tool calls is incomplete and keeps the partial output plus
   assert.equal(result.status, 2, result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.outputState, "incomplete");
-  assert.equal(payload.outputStateReason, "stop-reason");
-  assert.equal(payload.stopReason, "tool-calls");
+  assert.equal(payload.outputStateReason, "narration");
+  // agy has no stopReason of its own; its status is the nearest equivalent,
+  // so a SUCCESS document reads as a finished turn even when the text is thin.
+  assert.equal(payload.stopReason, "stop");
   assert.equal(payload.toolEventCount, 3);
   assert.equal(payload.rawOutput, "Parent contracts read. Now the source files.");
 
   const rendered = runCompanion(["result"], { env: fake.env, cwd }).stdout;
-  assert.match(rendered, /stopReason: tool-calls, 3 tool calls/);
+  assert.match(rendered, /stopReason: stop, 3 tool calls/);
   assert.match(rendered, /Parent contracts read\. Now the source files\./);
-  assert.match(rendered, /external_directory/, "the auto-rejected path must be visible");
+  assert.match(rendered, /Partial output below/);
   assert.match(rendered, /incomplete/);
+  assert.deepEqual(JSON.parse(runCompanion(["result", "--json"], { env: fake.env, cwd }).stdout).payload.warnings, []);
 });
 
 // P-LIVENESS: a companion killed mid-run (Bash timeout, SIGTERM) never writes a
@@ -288,20 +341,23 @@ function stageVersionedInstall(versions, running) {
   return path.join(staged, "scripts", "agy-companion.mjs");
 }
 
+// The check only fires from a *versioned* install: the version directory name
+// must equal the plugin's own version (read from the checkout's plugin.json,
+// which the staging links back), so the running copy is staged as 0.1.0.
 test("a newer install sitting next to the running one is named on stderr", () => {
   const fake = makeFakeEnv();
-  const entry = stageVersionedInstall(["0.2.0", "0.2.1", "0.3.0"], "0.2.0");
+  const entry = stageVersionedInstall(["0.1.0", "0.2.0", "0.3.0"], "0.1.0");
 
   const result = spawnSync(process.execPath, [entry, "--help"], { env: fake.env, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stderr, /a newer install of this plugin exists \(0\.3\.0\)/, "the highest one, by version");
-  assert.match(result.stderr, /you are running 0\.2\.0 from /);
+  assert.match(result.stderr, /you are running 0\.1\.0 from /);
   assert.match(result.stderr, /AGY_COMPANION_BIN/, "and it must say what to use instead");
   // A warning, not a replacement: the help the caller asked for is still there.
-  assert.match(result.stdout, /^agy-companion 0\.2\.0 —/);
+  assert.match(result.stdout, /^agy-companion 0\.1\.0 —/);
 
   // Only *newer* counts, and an unversioned checkout has nothing to compare.
-  const newest = stageVersionedInstall(["0.1.0", "0.2.0"], "0.2.0");
+  const newest = stageVersionedInstall(["0.1.0"], "0.1.0");
   const quiet = spawnSync(process.execPath, [newest, "--help"], { env: fake.env, encoding: "utf8" });
   assert.equal(quiet.status, 0, quiet.stderr);
   assert.doesNotMatch(quiet.stderr, /newer install/);

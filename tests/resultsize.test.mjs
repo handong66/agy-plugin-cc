@@ -5,6 +5,26 @@ import { test } from "node:test";
 
 import { makeFakeEnv, makeTempGitRepo, runCompanion } from "./helpers.mjs";
 
+// A review object that validates against the review output schema, so the fake
+// review run finishes with exit 0 instead of failing as schema-mismatch.
+const VALID_REVIEW = {
+  verdict: "needs-attention",
+  summary: "One blocking issue in the retry path.",
+  findings: [
+    {
+      severity: "high",
+      title: "Retry loop never backs off",
+      body: "The delay is recomputed but never awaited, so all retries fire immediately.",
+      file: "src/retry.mjs",
+      line_start: 42,
+      line_end: 42,
+      confidence: 0.9,
+      recommendation: "Await the computed delay before the next retry."
+    }
+  ],
+  next_steps: ["Await the backoff delay."]
+};
+
 function storeDirOf(fake) {
   const stateRoot = path.join(fake.stateDir, "state");
   return path.join(stateRoot, fs.readdirSync(stateRoot)[0]);
@@ -32,7 +52,7 @@ test("an empty stored payload says so instead of printing a blank line", () => {
 // output is too big" is a narrower channel, not a truncation flag that would
 // invite the lossy compression `commands/result.md` forbids.
 test("--structured-only yields the review object, or a reason and exit 1", () => {
-  const fake = makeFakeEnv({ mode: "review-json", extra: { AGY_FAKE_TOOLS: "2" } });
+  const fake = makeFakeEnv({ mode: "review-json", extra: { AGY_FAKE_STRUCTURED: JSON.stringify(VALID_REVIEW) } });
   const cwd = makeTempGitRepo();
 
   runCompanion(["review"], { env: fake.env, cwd });

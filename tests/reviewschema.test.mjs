@@ -11,7 +11,7 @@ const SCHEMA = JSON.parse(
 );
 
 const VALID_REVIEW = {
-  verdict: "approve",
+  verdict: "needs-attention",
   summary: "Read both call sites and the test; the change is safe.",
   findings: [],
   next_steps: []
@@ -49,10 +49,14 @@ test("validateAgainstSchema accepts a real review and names what a fake one is m
   );
 });
 
+// A non-review object staged via AGY_FAKE_STRUCTURED — the way a real run
+// returns its schema-validated `structured_output`, only here it fails agy's
+// own validation — must land on `incomplete (schema-mismatch)`, never render
+// as a verdict.
 test("a review that is not a review is incomplete, not a clean verdict", () => {
   const fake = makeFakeEnv({
     mode: "review-json",
-    extra: { AGY_FAKE_REVIEW_JSON: JSON.stringify({ note: "I could not finish" }), AGY_FAKE_TOOLS: "3" }
+    extra: { AGY_FAKE_STRUCTURED: JSON.stringify({ note: "I could not finish" }) }
   });
   const cwd = makeTempGitRepo();
 
@@ -74,7 +78,7 @@ test("a review that is not a review is incomplete, not a clean verdict", () => {
 });
 
 test("a well-formed review still renders as a verdict", () => {
-  const fake = makeFakeEnv({ mode: "review-json", extra: { AGY_FAKE_TOOLS: "3" } });
+  const fake = makeFakeEnv({ mode: "review-json", extra: { AGY_FAKE_STRUCTURED: JSON.stringify(VALID_REVIEW) } });
   const cwd = makeTempGitRepo();
 
   const result = runCompanion(["review", "--json"], { env: fake.env, cwd });
@@ -84,16 +88,20 @@ test("a well-formed review still renders as a verdict", () => {
   assert.equal(result.status, 0);
 });
 
-// A run that stops on a blacklisted `stopReason` is `incomplete` even when the
-// JSON it had already emitted validates. The three channels then disagreed
-// about the same job: the human render said "this is not a verdict, do not
-// infer one", while `--json` handed back a populated `review` and
-// `--structured-only` printed the object with exit 0. Whichever channel a
-// caller happened to read decided whether the review counted.
+// A run that stops before finishing is `incomplete` even when the JSON it had
+// already emitted validates. The three channels then disagreed about the same
+// job: the human render said "this is not a verdict, do not infer one", while
+// `--json` handed back a populated `review` and `--structured-only` printed the
+// object with exit 0. Whichever channel a caller happened to read decided
+// whether the review counted.
+//
+// agy states an ERROR verdict in the run document's `status`, so the unfinished
+// run is staged as a review whose document says ERROR while still carrying a
+// valid structured object (AGY_FAKE_STATUS + AGY_FAKE_STRUCTURED).
 test("an unfinished run does not publish its JSON as a verdict", () => {
   const fake = makeFakeEnv({
     mode: "review-json",
-    extra: { AGY_FAKE_TOOLS: "3", AGY_FAKE_STOP_REASON: "tool-calls" }
+    extra: { AGY_FAKE_STATUS: "ERROR", AGY_FAKE_STRUCTURED: JSON.stringify(VALID_REVIEW) }
   });
   const cwd = makeTempGitRepo();
 
@@ -104,7 +112,7 @@ test("an unfinished run does not publish its JSON as a verdict", () => {
   const json = runCompanion(["review", "--json"], { env: fake.env, cwd });
   const payload = JSON.parse(json.stdout);
   assert.equal(payload.outputState, "incomplete");
-  assert.equal(payload.outputStateReason, "stop-reason");
+  assert.equal(payload.outputStateReason, "run-error-with-partial-output");
   assert.equal(payload.review, null, "an unfinished run has no verdict to publish");
   assert.equal(payload.resultComplete, false);
   // The text is still there — this withholds the verdict, it does not hide the

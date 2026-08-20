@@ -10,6 +10,32 @@ const PROMPT = fs.readFileSync(
   "utf8"
 );
 
+// The prompt rides in the `-p` value of the agy flag vector.
+function promptOf(fake) {
+  const args = readRunArgs(fake);
+  return args[args.indexOf("-p") + 1];
+}
+
+// A review object that validates against plugins/agy/schemas/review-output.schema.json,
+// so the fake run finishes with exit 0 instead of failing as schema-mismatch.
+const VALID_REVIEW = {
+  verdict: "needs-attention",
+  summary: "One blocking issue in the retry path.",
+  findings: [
+    {
+      severity: "high",
+      title: "Retry loop never backs off",
+      body: "The delay is recomputed but never awaited, so all retries fire immediately.",
+      file: "src/retry.mjs",
+      line_start: 42,
+      line_end: 42,
+      confidence: 0.9,
+      recommendation: "Await the computed delay before the next retry."
+    }
+  ],
+  next_steps: ["Await the backoff delay."]
+};
+
 // X3: an unbounded adversarial review reports network-attacker findings against
 // a single-user local tool, and those findings then stop the user's actual
 // work. Their words, verbatim: "please stop interrupting my task".
@@ -25,7 +51,7 @@ test("the adversarial prompt asks for a boundary and neutral vocabulary", () => 
 });
 
 test("--threat-model reaches the reviewer, and its absence has a stated default", () => {
-  const fake = makeFakeEnv({ mode: "review-json" });
+  const fake = makeFakeEnv({ mode: "review-json", extra: { AGY_FAKE_STRUCTURED: JSON.stringify(VALID_REVIEW) } });
   const cwd = makeTempGitRepo();
 
   const withModel = runCompanion(
@@ -33,10 +59,10 @@ test("--threat-model reaches the reviewer, and its absence has a stated default"
     { env: fake.env, cwd }
   );
   assert.equal(withModel.status, 0, withModel.stdout + withModel.stderr);
-  assert.match(readRunArgs(fake).at(-1), /single-user local tool, no network exposure/);
+  assert.match(promptOf(fake), /single-user local tool, no network exposure/);
 
   runCompanion(["adversarial-review"], { env: fake.env, cwd });
-  const prompt = readRunArgs(fake).at(-1);
+  const prompt = promptOf(fake);
   assert.match(prompt, /No threat model was supplied by the caller/);
   assert.match(prompt, /single-user local application/);
   assert.match(prompt, /no network exposure/);
@@ -55,7 +81,7 @@ test("--threat-model reaches the reviewer, and its absence has a stated default"
 // `prompts/review.md` has no {{THREAT_MODEL}} slot. Documented nowhere,
 // rejected nowhere, honoured nowhere — the shape 补充发现 3 rules out.
 test("plain review rejects --threat-model instead of accepting and dropping it", () => {
-  const fake = makeFakeEnv({ mode: "review-json" });
+  const fake = makeFakeEnv({ mode: "review-json", extra: { AGY_FAKE_STRUCTURED: JSON.stringify(VALID_REVIEW) } });
   const cwd = makeTempGitRepo();
   const boundary = "single-user local tool XYZZY";
 
@@ -72,5 +98,5 @@ test("plain review rejects --threat-model instead of accepting and dropping it",
   // The adversarial command still honours it end to end.
   const accepted = runCompanion(["adversarial-review", "--threat-model", boundary], { env: fake.env, cwd });
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
-  assert.match(readRunArgs(fake).at(-1), /XYZZY/);
+  assert.match(promptOf(fake), /XYZZY/);
 });

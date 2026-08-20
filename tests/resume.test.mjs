@@ -73,6 +73,10 @@ test("both resume entry points agree on the same candidate", () => {
   assert.equal(pickResumeCandidate(JOBS.filter((job) => job.status !== "completed" && job.status !== "incomplete"), {}), null);
 });
 
+// Sessions are conversations: resume is `--conversation <id>`, and the fake
+// run reports conversation 11111111-2222-3333-4444-555555555555.
+const CONVERSATION_ID = "11111111-2222-3333-4444-555555555555";
+
 test("--resume-last says which session it resumed, and --resume-session skips the guesswork", () => {
   const fake = makeFakeEnv();
   const cwd = makeTempGitRepo();
@@ -82,23 +86,23 @@ test("--resume-last says which session it resumed, and --resume-session skips th
 
   const resumed = runCompanion(["task", "--resume-last", "--", "second run"], { env: fake.env, cwd });
   assert.equal(resumed.status, 0, resumed.stdout + resumed.stderr);
-  assert.match(resumed.stdout, /Resuming agy session ses_fake0123456789 \(from job task-/);
+  assert.match(resumed.stdout, new RegExp(`Resuming agy conversation ${CONVERSATION_ID} \\(from job task-`));
   assert.match(resumed.stdout, /first run/, "the handle must name the prompt being continued");
-  assert.equal(readRunArgs(fake).includes("--session"), true);
+  assert.equal(readRunArgs(fake).includes("--conversation"), true);
 
   const asJson = runCompanion(["task", "--json", "--resume-last", "--", "third run"], { env: fake.env, cwd });
   const payload = JSON.parse(asJson.stdout);
-  assert.equal(payload.resumedFrom.agyConversationId, "ses_fake0123456789");
+  assert.equal(payload.resumedFrom.agyConversationId, CONVERSATION_ID);
   assert.match(payload.resumedFrom.jobId, /^task-/);
 
-  // An explicit session id bypasses the heuristic entirely.
+  // An explicit conversation id bypasses the heuristic entirely.
   const explicit = runCompanion(["task", "--resume-session", "ses_chosen_by_caller", "--", "fourth run"], {
     env: fake.env,
     cwd
   });
   assert.equal(explicit.status, 0, explicit.stdout + explicit.stderr);
   const args = readRunArgs(fake);
-  assert.equal(args[args.indexOf("--session") + 1], "ses_chosen_by_caller");
+  assert.equal(args[args.indexOf("--conversation") + 1], "ses_chosen_by_caller");
 
   const conflict = runCompanion(
     ["task", "--resume-last", "--resume-session", "ses_x", "--", "fifth run"],

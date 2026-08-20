@@ -5,6 +5,26 @@ import { test } from "node:test";
 
 import { makeFakeEnv, makeTempGitRepo, runCompanion } from "./helpers.mjs";
 
+// A review object that validates against the review output schema, so the fake
+// review run finishes with exit 0 instead of failing as schema-mismatch.
+const VALID_REVIEW = {
+  verdict: "needs-attention",
+  summary: "One blocking issue in the retry path.",
+  findings: [
+    {
+      severity: "high",
+      title: "Retry loop never backs off",
+      body: "The delay is recomputed but never awaited, so all retries fire immediately.",
+      file: "src/retry.mjs",
+      line_start: 42,
+      line_end: 42,
+      confidence: 0.9,
+      recommendation: "Await the computed delay before the next retry."
+    }
+  ],
+  next_steps: ["Await the backoff delay."]
+};
+
 // PC1: the job id only ever appeared in the footer *after* the run, so a caller
 // who detached the companion with Bash(run_in_background: true) — 28 recorded
 // times — had no handle to poll while the run was in flight, and hand-rolled
@@ -89,7 +109,7 @@ test("review --json reports an empty target as JSON instead of a sentence", () =
 });
 
 test("review announces its handle too", () => {
-  const fake = makeFakeEnv({ mode: "review-json" });
+  const fake = makeFakeEnv({ mode: "review-json", extra: { AGY_FAKE_STRUCTURED: JSON.stringify(VALID_REVIEW) } });
   const result = runCompanion(["review"], { env: fake.env, cwd: makeTempGitRepo() });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout.split("\n")[0], /^Job: \S+ \(review, running\)/);

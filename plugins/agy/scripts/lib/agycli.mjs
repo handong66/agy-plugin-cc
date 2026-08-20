@@ -405,6 +405,7 @@ export function buildAgyArgs({
   workspace,
   model = null,
   effort = null,
+  variant = null,
   resumeConversationId = null,
   readOnly = false,
   jsonSchema = null,
@@ -439,8 +440,13 @@ export function buildAgyArgs({
   if (model) {
     args.push("--model", model);
   }
-  if (effort) {
-    args.push("--effort", String(effort).toLowerCase());
+  // `--variant` is the opencode-era spelling of the same dial; agy's own name
+  // for it is `--effort` (low|medium|high). The companion accepts both and
+  // canonicalises onto agy's flag. An effort agy does not accept is not put on
+  // the command line at all — `resolveRunSelection` has already warned about it.
+  const resolvedEffort = effort ?? variant;
+  if (resolvedEffort && EFFORT_LEVELS.has(String(resolvedEffort).toLowerCase())) {
+    args.push("--effort", String(resolvedEffort).toLowerCase());
   }
   if (jsonSchemaFile) {
     args.push("--json-schema", jsonSchemaFile);

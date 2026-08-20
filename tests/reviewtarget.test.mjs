@@ -11,6 +11,32 @@ function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
 }
 
+// The prompt rides in the `-p` value of the agy flag vector.
+function promptOf(fake) {
+  const args = readRunArgs(fake);
+  return args[args.indexOf("-p") + 1];
+}
+
+// A review object that validates against the review output schema, so the fake
+// review run finishes with exit 0 instead of failing as schema-mismatch.
+const VALID_REVIEW = {
+  verdict: "needs-attention",
+  summary: "One blocking issue in the retry path.",
+  findings: [
+    {
+      severity: "high",
+      title: "Retry loop never backs off",
+      body: "The delay is recomputed but never awaited, so all retries fire immediately.",
+      file: "src/retry.mjs",
+      line_start: 42,
+      line_end: 42,
+      confidence: 0.9,
+      recommendation: "Await the computed delay before the next retry."
+    }
+  ],
+  next_steps: ["Await the backoff delay."]
+};
+
 // PC6: every real review request in the corpus was a commit range and a file
 // set (`git diff 71dcdc5..HEAD`, "the documents under docs/"), which the old
 // selector could not express — so `review` was used zero times in two months.
@@ -95,7 +121,7 @@ test("--head without --base is refused instead of reviewing the working tree", (
 
 test("review accepts focus text, a rubric and a range end to end", () => {
   const { cwd, first } = makeHistory();
-  const fake = makeFakeEnv({ mode: "review-json" });
+  const fake = makeFakeEnv({ mode: "review-json", extra: { AGY_FAKE_STRUCTURED: JSON.stringify(VALID_REVIEW) } });
   const rubricFile = path.join(makeTempDir("agy-rubric"), "rubric.md");
   fs.writeFileSync(rubricFile, "blocker = critical; major = high; nit = low\n");
 
@@ -105,7 +131,7 @@ test("review accepts focus text, a rubric and a range end to end", () => {
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
 
-  const prompt = readRunArgs(fake).at(-1);
+  const prompt = promptOf(fake);
   assert.match(prompt, /User focus: check the spec wording/);
   assert.match(prompt, /blocker = critical/);
   assert.match(prompt, /docs\/spec\.md/);

@@ -7,39 +7,52 @@ import {
   classifyOutcome,
   composePrompt,
   extractStructuredJson,
-  parseEventStream,
+  parseAgyOutput,
   stripAnsi
 } from "../plugins/agy/scripts/lib/agycli.mjs";
+
+const CONVERSATION = "11111111-2222-3333-4444-555555555555";
 
 test("stripAnsi removes escape sequences but keeps bracketed text", () => {
   const esc = String.fromCharCode(27);
   assert.equal(stripAnsi(`${esc}[0mhello ${esc}[32m[tool] read${esc}[0m`), "hello [tool] read");
 });
 
-test("buildAgyArgs maps read-only runs to the plan agent", () => {
-  const args = buildAgyArgs({ prompt: "task text", readOnly: true, autoApprove: true });
-  assert.deepEqual(args.slice(0, 3), ["run", "--format", "json"]);
-  assert.ok(args.includes("--agent"));
-  assert.equal(args[args.indexOf("--agent") + 1], "plan");
-  assert.ok(!args.includes("--auto"), "read-only must never auto-approve");
-  assert.equal(args.at(-1), "task text");
-  assert.equal(args.at(-2), "--", "prompt must be positional after --");
+test("buildAgyArgs requires a workspace and maps read-only runs to no mode flag", () => {
+  const args = buildAgyArgs({ prompt: "task text", workspace: "/tmp/ws", readOnly: true });
+  assert.deepEqual(args.slice(0, 4), ["-p", "task text", "--output-format", "stream-json"]);
+  assert.ok(args.includes("--add-dir"), "--add-dir is the only thing that sets the workspace");
+  assert.equal(args[args.indexOf("--add-dir") + 1], "/tmp/ws");
+  assert.ok(args.includes("--dangerously-skip-permissions"));
+  // Read-only is a property of *which directory this is* (a disposable mirror),
+  // never of a mode flag — --mode plan refuses reads too and is never used.
+  assert.equal(args.includes("--mode"), false, "read-only runs never pass a mode flag");
+  assert.equal(args.at(-1), "--disable-slash-commands", "the prompt must never be reinterpreted");
+  assert.throws(() => buildAgyArgs({ prompt: "x" }), /workspace/);
 });
 
-test("buildAgyArgs maps write runs to --auto with model/variant/session", () => {
+test("buildAgyArgs maps write runs to --mode accept-edits with model/effort/conversation", () => {
   const args = buildAgyArgs({
     prompt: "-starts with dash",
-    model: "anthropic/claude-sonnet-4-5",
-    variant: "high",
-    resumeSessionId: "ses_abc",
-    autoApprove: true
+    workspace: "/repo",
+    model: "gemini-3.7-flash-low",
+    effort: "high",
+    resumeConversationId: CONVERSATION
   });
-  assert.ok(args.includes("--auto"));
-  assert.ok(!args.includes("--agent"));
-  assert.equal(args[args.indexOf("--model") + 1], "anthropic/claude-sonnet-4-5");
-  assert.equal(args[args.indexOf("--variant") + 1], "high");
-  assert.equal(args[args.indexOf("--session") + 1], "ses_abc");
-  assert.equal(args.at(-1), "-starts with dash");
+  assert.equal(args[args.indexOf("--mode") + 1], "accept-edits");
+  assert.equal(args[args.indexOf("--model") + 1], "gemini-3.7-flash-low");
+  assert.equal(args[args.indexOf("--effort") + 1], "high");
+  assert.equal(args[args.indexOf("--conversation") + 1], CONVERSATION);
+  assert.equal(args[1], "-starts with dash");
+  assert.ok(!args.includes("--variant"), "the vector speaks agy's own flag name");
+});
+
+test("buildAgyArgs canonicalises the --variant alias onto --effort and drops invalid levels", () => {
+  const aliased = buildAgyArgs({ prompt: "x", workspace: "/w", variant: "low" });
+  assert.equal(aliased[aliased.indexOf("--effort") + 1], "low");
+  assert.ok(!aliased.includes("--variant"));
+  const invalid = buildAgyArgs({ prompt: "x", workspace: "/w", effort: "max" });
+  assert.ok(!invalid.includes("--effort"), "an effort agy does not accept is not put on the command line");
 });
 
 test("composePrompt folds rules and schema into the prompt", () => {
@@ -50,48 +63,134 @@ test("composePrompt folds rules and schema into the prompt", () => {
   assert.ok(prompt.indexOf("no side effects") < prompt.indexOf("review this"));
 });
 
-test("parseEventStream extracts session, stop reason, and final text (real capture)", () => {
-  // Events captured verbatim from `agy run --format json` v1.17.15.
+test("parseAgyOutput reads the model and final text off the streamed events (real capture)", () => {
+  // Events shaped exactly like the agy 1.1.15 captures in
+  // docs/AGY-RUNTIME-CONTRACT.md §5.
   const stdout = [
-    '{"type":"step_start","timestamp":1783782739399,"sessionID":"ses_0ae437d23ffeJtaD6ceMAAJlCK","part":{"id":"prt_f51bc8dc1001F7quBZjUh5NX1q","messageID":"msg_f51bc8394001T1sMV4MyES1bck","sessionID":"ses_0ae437d23ffeJtaD6ceMAAJlCK","type":"step-start"}}',
-    '{"type":"text","timestamp":1783782740298,"sessionID":"ses_0ae437d23ffeJtaD6ceMAAJlCK","part":{"id":"prt_f51bc9125001NwZTcZQOnFqnPO","messageID":"msg_f51bc8394001T1sMV4MyES1bck","sessionID":"ses_0ae437d23ffeJtaD6ceMAAJlCK","type":"text","text":"OK","time":{"start":1783782740261,"end":1783782740280}}}',
-    '{"type":"step_finish","timestamp":1783782740298,"sessionID":"ses_0ae437d23ffeJtaD6ceMAAJlCK","part":{"id":"prt_f51bc913d001waIh3fCLg7Sgpr","reason":"stop","messageID":"msg_f51bc8394001T1sMV4MyES1bck","sessionID":"ses_0ae437d23ffeJtaD6ceMAAJlCK","type":"step-finish","tokens":{"total":8100,"input":8087,"output":2,"reasoning":11,"cache":{"write":0,"read":0}},"cost":0}}'
+    JSON.stringify({
+      event: "init",
+      conversation_id: CONVERSATION,
+      init: { model: "gemini-3.7-flash-low", cwd: "/tmp", tools: ["read_file", "write_file", "run_command"] }
+    }),
+    JSON.stringify({
+      event: "step_update",
+      step_update: { conversation_id: CONVERSATION, step_index: 0, state: "DONE", step_type: "user_input" }
+    }),
+    JSON.stringify({
+      event: "step_update",
+      step_update: { conversation_id: CONVERSATION, step_index: 1, state: "DONE", step_type: "tool_use" }
+    }),
+    JSON.stringify({
+      event: "step_update",
+      step_update: {
+        conversation_id: CONVERSATION,
+        step_index: 2,
+        state: "DONE",
+        step_type: "agent_response",
+        text_delta: "OK\n",
+        usage: {}
+      }
+    }),
+    JSON.stringify({
+      event: "result",
+      result: {
+        conversation_id: CONVERSATION,
+        status: "SUCCESS",
+        response: "final text",
+        duration_seconds: 2.9,
+        num_turns: 1,
+        usage: {}
+      }
+    })
   ].join("\n");
-  const parsed = parseEventStream(stdout);
-  assert.equal(parsed.text, "OK");
-  assert.equal(parsed.sessionId, "ses_0ae437d23ffeJtaD6ceMAAJlCK");
+  const parsed = parseAgyOutput(stdout);
+  assert.equal(parsed.text, "final text");
+  assert.equal(parsed.conversationId, CONVERSATION);
+  assert.equal(parsed.status, "SUCCESS");
+  assert.equal(parsed.stopReason, "stop");
+  assert.equal(parsed.observedModel, "gemini-3.7-flash-low");
+  assert.equal(parsed.toolEventCount, 1);
+});
+
+test("parseAgyOutput parses the plain json form and reports no model", () => {
+  const parsed = parseAgyOutput(
+    JSON.stringify({
+      conversation_id: CONVERSATION,
+      status: "SUCCESS",
+      response: "plain",
+      duration_seconds: 2.8,
+      num_turns: 1,
+      usage: {}
+    })
+  );
+  assert.equal(parsed.text, "plain");
+  assert.equal(parsed.observedModel, null, "only the init event names the model");
+  assert.equal(parsed.status, "SUCCESS");
   assert.equal(parsed.stopReason, "stop");
 });
 
-test("parseEventStream keeps the last payload per part and the newest message", () => {
-  const line = (messageID, partId, text) =>
-    JSON.stringify({ type: "text", sessionID: "ses_x", part: { id: partId, messageID, sessionID: "ses_x", type: "text", text } });
-  const stdout = [
-    line("msg_1", "prt_a", "old answer"),
-    line("msg_2", "prt_b", "new"),
-    line("msg_2", "prt_b", "new answer, streamed"),
-    "not json",
-    ""
-  ].join("\n");
-  const parsed = parseEventStream(stdout);
-  assert.equal(parsed.text, "new answer, streamed");
+test("parseAgyOutput keeps the text of a run killed before its result event", () => {
+  const parsed = parseAgyOutput(
+    [
+      JSON.stringify({ event: "init", init: { model: "gemini-3.7-flash-low" } }),
+      JSON.stringify({
+        event: "step_update",
+        step_update: { step_type: "agent_response", text_delta: "part one " }
+      }),
+      JSON.stringify({
+        event: "step_update",
+        step_update: { step_type: "agent_response", text_delta: "part two" }
+      })
+    ].join("\n")
+  );
+  assert.equal(parsed.text, "part one part two");
+  assert.equal(parsed.status, null);
+  assert.equal(parsed.stopReason, null);
+  assert.equal(parsed.observedModel, "gemini-3.7-flash-low");
 });
 
-test("parseEventStream returns null when no events are present", () => {
-  assert.equal(parseEventStream(""), null);
-  assert.equal(parseEventStream("plain text output"), null);
+test("parseAgyOutput returns null when no events are present", () => {
+  assert.equal(parseAgyOutput(""), null);
+  assert.equal(parseAgyOutput("plain text output"), null);
 });
 
-test("parseEventStream counts tool calls once per tool part", () => {
+test("parseAgyOutput counts tool steps once and surfaces the error field", () => {
   const stdout = [
-    JSON.stringify({ type: "step_start", sessionID: "ses_x", part: { id: "prt_s", messageID: "m1", type: "step-start" } }),
-    JSON.stringify({ type: "tool", sessionID: "ses_x", part: { id: "prt_t1", messageID: "m1", tool: "read", state: { status: "running" } } }),
-    JSON.stringify({ type: "tool", sessionID: "ses_x", part: { id: "prt_t1", messageID: "m1", tool: "read", state: { status: "completed" } } }),
-    JSON.stringify({ type: "tool", sessionID: "ses_x", part: { id: "prt_t2", messageID: "m1", tool: "grep", state: { status: "completed" } } }),
-    JSON.stringify({ type: "text", sessionID: "ses_x", part: { id: "prt_x1", messageID: "m1", type: "text", text: "reading" } })
+    JSON.stringify({ event: "init", conversation_id: CONVERSATION, init: { model: "m" } }),
+    JSON.stringify({ event: "step_update", step_update: { step_type: "user_input" } }),
+    JSON.stringify({ event: "step_update", step_update: { step_type: "tool_use" } }),
+    JSON.stringify({ event: "step_update", step_update: { step_type: "tool_use" } }),
+    JSON.stringify({ event: "step_update", step_update: { step_type: "checkpoint" } }),
+    JSON.stringify({
+      event: "result",
+      result: {
+        conversation_id: CONVERSATION,
+        status: "ERROR",
+        response: "found it before being stopped",
+        error: "permission check failed for read_file",
+        usage: {}
+      }
+    })
   ].join("\n");
-  assert.equal(parseEventStream(stdout).toolEventCount, 2);
-  assert.equal(parseEventStream(JSON.stringify({ type: "step_start", part: { id: "p" } })).toolEventCount, 0);
+  const parsed = parseAgyOutput(stdout);
+  assert.equal(parsed.toolEventCount, 2);
+  assert.equal(parsed.status, "ERROR");
+  assert.equal(parsed.errorText, "permission check failed for read_file");
+  assert.equal(parsed.stopReason, "error");
+});
+
+test("parseAgyOutput exposes native structured output", () => {
+  const parsed = parseAgyOutput(
+    JSON.stringify({
+      conversation_id: CONVERSATION,
+      status: "SUCCESS",
+      response: "x",
+      structured_output: { verdict: "approve" },
+      json_schema: {},
+      usage: {}
+    })
+  );
+  assert.deepEqual(parsed.structuredOutput, { verdict: "approve" });
 });
 
 test("classifyOutcome reports failed for spawn errors, bad exits, and unparsable streams", () => {
@@ -101,6 +200,19 @@ test("classifyOutcome reports failed for spawn errors, bad exits, and unparsable
   );
   assert.equal(classifyOutcome({ exitCode: 1, parsed: { text: "boom" } }).state, "failed");
   assert.equal(classifyOutcome({ exitCode: 0, parsed: null }).state, "failed");
+});
+
+test("classifyOutcome reads agy's status before its exit code", () => {
+  // Measured (agy 1.1.15): a run that answered at length and then tripped a
+  // permission boundary reported status ERROR alongside a substantial response.
+  const partial = classifyOutcome({ exitCode: 1, parsed: { text: "Here is what I found.", status: "ERROR" } });
+  assert.equal(partial.state, "incomplete");
+  assert.equal(partial.reason, "run-error-with-partial-output");
+
+  // An ERROR with no text is a failure, not an empty success.
+  const empty = classifyOutcome({ exitCode: 1, parsed: { text: "", status: "ERROR", errorText: "denied" } });
+  assert.equal(empty.state, "failed");
+  assert.equal(empty.reason, "run-error");
 });
 
 test("classifyOutcome marks empty answers incomplete instead of completed", () => {
