@@ -144,7 +144,7 @@ function requireAgyReady({ asJson }) {
     return availability;
   }
   const reason = availability.available
-    ? "agy is installed but has no usable providers. Run `agy auth login` (or `!agy auth login` from Claude Code)."
+    ? "agy is installed but could not list models, which usually means it is not signed in. Run `agy` once in a terminal and complete the Google sign-in."
     : `agy CLI not found. ${SETUP_GUIDANCE}`;
   if (asJson) {
     printJson({ ok: false, reason, setupRequired: true });
@@ -252,6 +252,11 @@ function handleTerminationSignal(signal) {
         if (run.childPid) {
           terminateProcessTree(run.childPid);
         }
+        // The review copy is a full copy of the working tree. One left behind
+        // per interrupted review is not only litter: it is a copy of the user's
+        // repository sitting in a world-readable temp directory. Deleting it is
+        // synchronous and best-effort, like everything else in this handler.
+        run.mirror?.cleanup();
         const current = findJob(run.cwd, run.jobId, { reconcile: false });
         if (!current || current.status === "running" || current.status === "queued") {
           const parsed = parseAgyOutput(run.getStdout?.() ?? "");
@@ -450,6 +455,7 @@ async function executeJob({
     jobId,
     kind,
     cwd,
+    mirror,
     childPid: null,
     startedAtMs: Date.now(),
     getStdout: null,
@@ -1603,10 +1609,12 @@ const SUBCOMMAND_HELP = {
     "  --prompt-file <path>    read the prompt from a file, byte for byte",
     "  --prompt-stdin          read the prompt from stdin, byte for byte",
     "  --json                  machine-readable result on stdout",
-    "  --model <provider/model>  override the model (leave unset to use agy's default)",
-    "  --variant <level>       reasoning variant; --effort is an alias",
-    "  --write                 allow edits (default is read-only via the plan agent)",
-    "  --read-only             force the read-only plan agent",
+    "  --model <model id>      override the model (leave unset to use agy's default)",
+    "  --effort low|medium|high  reasoning effort dial (--variant is an alias)",
+    "  --write                 allow edits (default is read-only: agy gets a",
+    "                          disposable copy of the tree, never the real path)",
+    "  --read-only             force the read-only isolation (the task default;",
+    "                          only needed to be explicit)",
     "  --resume-last           continue the newest resumable task session in this repo",
     "                          (completed, incomplete or failed tasks; never a cancelled",
     "                          or orphaned one — name those with --resume-session)",
@@ -1632,8 +1640,8 @@ const SUBCOMMAND_HELP = {
     "  --paths <glob,...>      limit the review to these pathspecs (--files is an alias)",
     "  --rubric-file <path>    severity vocabulary to judge by (the JSON schema is unchanged)",
     "  --scope auto|working-tree|branch   (staged-only / unstaged-only are rejected)",
-    "  --model <provider/model>  override the model (leave unset to use agy's default)",
-    "  --variant <level>       reasoning variant",
+    "  --model <model id>      override the model (leave unset to use agy's default)",
+    "  --effort low|medium|high  reasoning effort dial (--variant is an alias)",
     "  --json                  machine-readable result on stdout; a target with no changes",
     "                          in it is a JSON document too (outputState \"empty\", exit 0)",
     "  --timeout-ms <ms>       companion-side deadline for the run (default 900000)",
@@ -1651,8 +1659,8 @@ const SUBCOMMAND_HELP = {
     "  --paths <glob,...>      limit the review to these pathspecs (--files is an alias)",
     "  --rubric-file <path>    severity vocabulary to judge by (the JSON schema is unchanged)",
     "  --scope auto|working-tree|branch   (staged-only / unstaged-only are rejected)",
-    "  --model <provider/model>  override the model (leave unset to use agy's default)",
-    "  --variant <level>       reasoning variant",
+    "  --model <model id>      override the model (leave unset to use agy's default)",
+    "  --effort low|medium|high  reasoning effort dial (--variant is an alias)",
     "  --threat-model <text>   the boundary to judge findings against; findings outside",
     "                          it are labelled out-of-model and cannot block",
     "  --json                  machine-readable result on stdout; a target with no changes",
@@ -1746,8 +1754,8 @@ function commandHelp(subcommand = null) {
       "",
       "Subcommands (run `<subcommand> --help` for its flags):",
       "  setup [--json] [--enable-review-gate|--disable-review-gate]",
-      "  task [--json] [--model <provider/model>] [--variant <v>] [--write|--read-only] [--resume-last|--resume-session <id>] [--timeout-ms <ms>] <task text>",
-      "  review [--base <ref|A..B> [--head <ref>]] [--paths <globs>] [--scope ...] [--model <m>] [--json] [focus text]",
+      "  task [--json] [--model <id>] [--effort low|medium|high] [--write|--read-only] [--resume-last|--resume-session <id>] [--timeout-ms <ms>] <task text>",
+      "  review [--base <ref|A..B> [--head <ref>]] [--paths <globs>] [--scope ...] [--model <id>] [--json] [focus text]",
       "  adversarial-review [--base <ref|A..B> [--head <ref>]] [--paths <globs>] [--threat-model <text>] [focus text]",
       "  status [job-id] [--all] [--wait] [--timeout-ms <ms>] [--json]",
       "  result [job-id] [--wait] [--timeout-ms <ms>] [--json|--structured-only]",
@@ -1756,8 +1764,9 @@ function commandHelp(subcommand = null) {
       "  transfer [--source <claude-jsonl>] [--model <provider/model>]",
       "",
       "--timeout-ms bounds one agy run (task/review, default 900000) or one",
-      "wait loop (status/result, default 900000). `agy run` has no timeout of",
-      "its own, so this is the only deadline a stuck run has.",
+      "wait loop (status/result, default 900000). agy's own --print-timeout bounds",
+      "its wait for the print to complete, not the process tree it spawned, so",
+      "this is the only deadline a stuck run has.",
       "--background and --wait are Claude Code execution flags, not companion flags:",
       "the companion always runs in the foreground. Detach with",
       "Bash(run_in_background: true), or use /agy:rescue --background."
