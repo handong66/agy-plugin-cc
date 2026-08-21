@@ -134,8 +134,11 @@ function claudeSessionId() {
 
 function requireAgyReady({ asJson }) {
   // The Stop hook probes availability before it spawns this process; running
-  // `agy --version` + `agy auth list` again costs ~1.1s per stop for
-  // an answer the parent already has.
+  // `agy --version` + `agy models` again costs ~3s per stop for an answer the
+  // parent already has. Nearly all of that is `agy models`, which is a network
+  // call to Google — `agy --version` alone is ~0.2s. (agy has no `auth list`;
+  // the model listing is the readiness probe, because it is the cheapest thing
+  // that fails when the account is not signed in.)
   if (process.env[READY_ENV] === "1") {
     return { available: true, usable: true, authenticated: true, checkedByParent: true };
   }
@@ -1682,13 +1685,15 @@ const SUBCOMMAND_HELP = {
     "  --timeout-ms <ms>       bound for --wait (default 900000)",
     "  --json                  machine-readable result on stdout",
     "",
-    "How long to wait: this runtime has no measured latency corpus yet. The only",
-    "numbers taken so far are floors from toy repositories — a working-tree review",
-    "on a flash-tier model finished in ~12s — and a floor from a toy repository is",
-    "not a budget for a real review, so no median or p90 is published here rather",
-    "than one being invented. Budget generously and measure your own repositories:",
-    "`--wait` returns as soon as the job is terminal, so a long --timeout-ms costs",
-    "nothing when the run is quick, while a short one truncates work that was fine.",
+    "How long to wait: this runtime has no measured latency corpus yet, so no",
+    "median or p90 is published rather than one being invented. What exists is a",
+    "handful of floors, all on gemini-3.7-flash-low in one- or two-file repos: a",
+    "read-only review in ~12s, a write-capable fix in ~14s, a resume in ~7s. Every",
+    "figure and what produced it is in docs/AGY-RUNTIME-CONTRACT.md section 9.",
+    "A floor from a toy repo is not a budget, and the pro-tier models have not been",
+    "timed at all. Budget generously: `--wait` returns as soon as the job is",
+    "terminal, so a long --timeout-ms costs nothing when the run is quick, while a",
+    "short one truncates work that was fine.",
     "`--all --json` gives every job's elapsedMs and resultComplete in one call."
   ],
   result: [

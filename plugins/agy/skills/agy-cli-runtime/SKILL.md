@@ -43,7 +43,7 @@ Entry point rules:
 - `/agy:setup --json` reports `pluginVersion` and `companionPath` if you need to confirm which copy answered.
 
 Timeout rules:
-- agy runs can take longer than two minutes, so the Claude Code default of 120000 ms cuts them off mid-run with `Exit code 143`. Measured floor numbers on this runtime are small (a working-tree review on a flash-tier model finished in ~12s), but they came from toy repositories and are not a budget for real work — leave a generous deadline, which costs nothing when the run is quick.
+- agy runs can take longer than two minutes, so the Claude Code default of 120000 ms cuts them off mid-run with `Exit code 143`. The measured floors on this runtime are small — a read-only review in ~12s, a write-capable fix in ~14s, both on `gemini-3.7-flash-low` in a one-file repository — but they are floors from toy repositories, not a budget for real work, and no pro-tier model has been timed. Leave a generous deadline: it costs nothing when the run is quick, because `--wait` returns the moment the job is terminal. The full table is in `docs/AGY-RUNTIME-CONTRACT.md` section 9; do not cite a figure that is not in it.
 - Always pass `timeout: 600000` on a foreground `task` call. Never rely on the default.
 - `timeout` and `run_in_background` are Claude Code `Bash` parameters. They are never companion flags and must not appear in the companion command line.
 

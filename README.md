@@ -121,7 +121,9 @@ Write-capable runs (`/agy:rescue`) get your real repository and `--mode accept-e
 
 `/agy:status <id> --wait --timeout-ms <ms>` blocks until a job reaches a terminal state and returns the moment it does, so a generous deadline costs nothing when the run is quick; `/agy:status --all --json` reports every job's `elapsedMs` and `resultComplete` in one call.
 
-**This runtime has no measured latency corpus yet, and no median or p90 is published here rather than one being invented.** The only numbers taken so far are floors from toy repositories — a working-tree review on `gemini-3.7-flash-low` finished in ~12s, a write-capable fix in ~14s — and a floor from a toy repository is not a budget for a review of real work. Budget generously, measure your own repositories, and treat a short deadline as the thing most likely to truncate a run that was going fine. The same statement is in `status --help`.
+**This runtime has no measured latency corpus yet, and no median or p90 is published here rather than one being invented.** A corpus would be enough recorded runs — across real repositories, diff sizes and model tiers — to take quantiles from. What exists instead is a handful of floors, all on `gemini-3.7-flash-low` in one- or two-file repositories: a read-only review finished in ~12s, a write-capable fix in ~14s, a `--conversation` resume in ~7s. Every measured figure this project publishes, with what produced it, is in [`docs/AGY-RUNTIME-CONTRACT.md`](docs/AGY-RUNTIME-CONTRACT.md) §9; `status --help` and the bundled skill cite the same numbers and nothing else.
+
+A floor from a toy repository is not a budget for a review of real work, and neither `gemini-3.1-pro-high` nor `claude-opus-4-6-thinking` has been timed at all. Budget generously and measure your own repositories: `--wait` returns the moment a job is terminal, so a deadline that is too long costs nothing, while one that is too short destroys a run that was going fine. To build the corpus yourself, run reviews across your repositories and take the quantiles of `elapsedMs` from `/agy:status --all --json`.
 
 ### Stop-time review gate
 

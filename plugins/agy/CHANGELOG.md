@@ -71,6 +71,18 @@ agy 1.1.15 before it was written, and the captures are in
 - **Sessions are conversations.** Resume is `--conversation <id>`;
   `agy --continue` continues the most recent one. Job records and `--json`
   documents carry `agyConversationId`.
+- **Every published timing figure has one source, and a test enforces it.**
+  `docs/AGY-RUNTIME-CONTRACT.md` section 9 holds the full table of what was
+  measured and what produced it; the README, `status --help` and the bundled
+  skill may cite those numbers and no others. This is checked rather than asked
+  for, because it had already drifted: the contract listed the four probe
+  timings taken on day one while three other layers quoted a ~12s review none of
+  them recorded, and two code comments carried a ~1.1s readiness probe measured
+  on the opencode CLI, for an `agy auth list` command that does not exist. The
+  real probe is ~3s, almost all of it the networked model listing. There is
+  still no latency corpus for this runtime — no median or p90 is published
+  rather than one being invented — and any figure that is quoted must travel
+  with that admission.
 - **Flag validation is inherited and kept.** `--threat-model` is refused by plain `review` rather than accepted and dropped — only the adversarial prompt has a slot for it — an unknown flag before the free text fails the command instead of landing in the prompt, and `--scope` is validated against `auto|working-tree|branch`.
 - **`--variant` is `--effort`** (`low` | `medium` | `high`), agy's own name for
   the dial, and `--variant` is kept as an alias.

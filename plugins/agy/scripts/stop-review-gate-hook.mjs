@@ -91,8 +91,9 @@ function runStopReview(cwd, input = {}, { availabilityChecked = false } = {}) {
     // heuristic is wrong for exactly this child: it turned every real verdict
     // from a reviewer that read the repo into `incomplete`.
     [MIN_ANSWER_CHARS_ENV]: "0",
-    // The hook has already paid for `agy --version` + `agy auth list`
-    // (~1.1s measured); the child would otherwise run the same two probes.
+    // The hook has already paid for `agy --version` + `agy models` (~3s
+    // measured, almost all of it the networked model listing); the child would
+    // otherwise run the same two probes on every stop.
     ...(availabilityChecked ? { [READY_ENV]: "1" } : {})
   };
   const result = spawnSync(process.execPath, [scriptPath, "task", "--json", prompt], {

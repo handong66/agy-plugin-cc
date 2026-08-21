@@ -218,3 +218,65 @@ test("rescue docs route through the exported entry point, never a versioned path
     "the skill must ban path guessing outright"
   );
 });
+
+// Timing figures drifted once already: the contract document still listed the
+// four probe timings taken on day one while the README, `status --help` and the
+// skill quoted a ~12s review none of them recorded, and two code comments
+// carried a ~1.1s readiness probe measured on the *opencode* CLI for a command
+// (`agy auth list`) that does not exist — the real probe is ~3s. Prose asking
+// future edits not to drift does not prevent drift; this does.
+//
+// The rule: docs/AGY-RUNTIME-CONTRACT.md section 9 is the only place a timing
+// may be introduced. Every other layer may cite it and nothing else.
+const TIMING_PATTERN = /~\d+(?:\.\d+)?s\b/g;
+
+function timingsIn(text) {
+  return new Set(String(text).match(TIMING_PATTERN) ?? []);
+}
+
+test("every published timing figure traces back to the contract document", () => {
+  const contract = fs.readFileSync(path.join(REPO_ROOT, "docs", "AGY-RUNTIME-CONTRACT.md"), "utf8");
+  const source = timingsIn(contract);
+  assert.ok(source.size > 0, "the contract document must actually carry the measured figures");
+
+  const citing = [
+    ["README.md", fs.readFileSync(path.join(REPO_ROOT, "README.md"), "utf8")],
+    ["scripts/agy-companion.mjs", readDoc("scripts", "agy-companion.mjs")],
+    ["scripts/stop-review-gate-hook.mjs", readDoc("scripts", "stop-review-gate-hook.mjs")],
+    ["skills/agy-cli-runtime/SKILL.md", readDoc("skills", "agy-cli-runtime", "SKILL.md")],
+    ["skills/agy-result-handling/SKILL.md", readDoc("skills", "agy-result-handling", "SKILL.md")],
+    ["agents/agy-rescue.md", readDoc("agents", "agy-rescue.md")]
+  ];
+
+  for (const [name, text] of citing) {
+    for (const figure of timingsIn(text)) {
+      assert.ok(
+        source.has(figure),
+        `${name} cites ${figure}, which is not in docs/AGY-RUNTIME-CONTRACT.md section 9. ` +
+          "Measure it and add it there, or cite a figure that was measured — a number that " +
+          "exists in only one layer is how the opencode timings survived the port."
+      );
+    }
+  }
+});
+
+test("a published timing never travels without the admission that there is no corpus", () => {
+  // A floor quoted on its own reads as a budget. The three user-facing layers
+  // that quote one must also say what it is not, in the same breath.
+  for (const [name, text] of [
+    ["README.md", fs.readFileSync(path.join(REPO_ROOT, "README.md"), "utf8")],
+    ["status --help", readDoc("scripts", "agy-companion.mjs")],
+    ["skills/agy-cli-runtime/SKILL.md", readDoc("skills", "agy-cli-runtime", "SKILL.md")]
+  ]) {
+    assert.match(
+      text,
+      /no measured latency corpus|floors? from (?:a )?toy repo/i,
+      `${name} quotes measured timings, so it must also say they are floors, not a budget`
+    );
+    assert.match(
+      text,
+      /AGY-RUNTIME-CONTRACT/,
+      `${name} must point at the document its figures come from`
+    );
+  }
+});

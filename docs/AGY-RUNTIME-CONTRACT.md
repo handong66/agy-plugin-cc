@@ -217,11 +217,57 @@ State lives in `~/.gemini/antigravity-cli/` (`conversations/`, `brain/`, `presen
 
 ## 9. Measured wall time
 
-Trivial prompt, `gemini-3.7-flash-low`, no tools: ~2-3s.
-Single-file read with `--add-dir`:                ~4s.
-Plan-mode artifact generation:                    ~17s.
-Multi-step run that hit a permission boundary:    ~48s.
+This section is the single source of truth for every timing figure this project
+publishes. `README.md`, `status --help` and `skills/agy-cli-runtime/SKILL.md` may
+only cite numbers that appear here; `tests/docs.test.mjs` enforces that, so a
+figure cannot be introduced in one layer and drift away from the others.
 
-These are floor numbers from toy prompts, not review-sized work. Do not use them to
-budget a real review deadline; measure that separately against real reviews before
-publishing any figure.
+Every row was produced on this machine against agy 1.1.15/1.1.16, on
+`gemini-3.7-flash-low`, in repositories of one or two files. Run-level figures
+come from the run document's `duration_seconds`; job-level figures come from the
+companion's own `elapsedMs`.
+
+| What was run | Time |
+|---|---|
+| Invalid `--model`, rejected before any model turn | ~0.1s |
+| `agy --version` alone | ~0.2s |
+| Readiness probe: `agy --version` + `agy models` | ~3s, ~3s, ~4s (three runs) |
+| Trivial prompt, no tools (`--output-format json`) | ~3s |
+| Trivial prompt, no tools (`--output-format stream-json`) | ~2s |
+| Tool call auto-denied for want of `--dangerously-skip-permissions` | ~3s, ~7s (two runs) |
+| Single-file read with `--add-dir` | ~4s |
+| `--conversation` resume, recalling a token from the previous turn | ~7s |
+| Write-capable task, one-line acknowledgement | ~10s |
+| `--mode plan`, refusing a read | ~10s |
+| Read-only review of a one-file dirty working tree | ~12s |
+| Read-only task attempting a fix (writes land in the discarded copy) | ~12s |
+| Write-capable task fixing a bug in one file | ~14s, ~16s (two runs) |
+| `--mode plan`, producing a plan artifact | ~17s |
+| `--json-schema` run under `--mode plan` | ~26s |
+| Multi-step run with no `--add-dir`, ending on a protected-path boundary | ~48s |
+
+**These are floors, and a floor is not a budget.** Every row above is a toy
+repository on the cheapest model. Nothing here says what a review of a few
+hundred changed lines costs, and nothing here says what
+`gemini-3.1-pro-high` or `claude-opus-4-6-thinking` cost — both of which should
+be expected to be slower by a wide margin.
+
+**There is no latency corpus for this runtime.** A corpus would be enough
+recorded runs, across real repositories, diff sizes and model tiers, to compute a
+median and a p90 from. The project this one was ported from published exactly
+that (`median ~3 minutes, p90 near 5.5 minutes`, over 19 recorded runs) and those
+figures were deleted rather than restated here, because they measured a different
+CLI. No median or p90 is published for agy until one is measured.
+
+What this means in practice, and why it is worth measuring later: two deadlines
+in this plugin are currently reasoned guesses rather than observations — the
+companion's own `--timeout-ms` default of 900000, and the `timeout: 600000` the
+rescue templates put on Claude Code's Bash calls. Claude Code's own default is
+120000, which is the number that actually truncates runs (`Exit code 143`). Until
+the corpus exists the plugin errs long, because `--wait` returns the moment a job
+is terminal: a deadline that is too long costs nothing, while one that is too
+short destroys work that was going fine.
+
+To build the corpus: run reviews across several real repositories at varying diff
+sizes and model tiers, then read `status --all --json` and take the quantiles of
+`elapsedMs`.
